@@ -146,6 +146,13 @@ td.wrap{white-space:normal;min-width:160px}
 .badge.A{background:var(--bar);color:var(--text)}
 .badge.part{font-weight:500;color:var(--muted)}
 .more{display:flex;justify-content:center;margin-top:8px}
+/* شريط تقدّم الهدف: التعبئة = المتوقع لآخر الشهر، والعلامات = المستويات */
+.tg-bar{position:relative;width:180px;height:12px;border-radius:6px;background:var(--surface-2);overflow:hidden}
+.tg-bar i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:6px;background:var(--bad)}
+.tg-bar i.l1{background:var(--s4)} .tg-bar i.l2,.tg-bar i.l3{background:var(--good)}
+.tg-bar b{position:absolute;inset-block:0;width:2px;background:var(--text);opacity:.55}
+.tg-lv{font-weight:600}.tg-lv.l0{color:var(--bad)}.tg-lv.l1{color:var(--s4)}.tg-lv.l2,.tg-lv.l3{color:var(--good)}
+td.tg-hit{background:var(--good-bg)} td.tg-miss{background:var(--bad-bg)}
 .welcome{max-width:880px;margin:30px auto;display:flex;flex-direction:column;gap:16px}
 .welcome h2{font-size:22px}
 .welcome .big{display:flex;gap:10px;flex-wrap:wrap}
@@ -273,6 +280,7 @@ tbody tr.drill td:first-child::after{content:" ‹";color:var(--muted)}
     <button data-tab="items">الأصناف</button>
     <button data-tab="alerts">التنبيهات</button>
     <button data-tab="cats">الأقسام</button>
+    <button data-tab="targets">الأهداف</button>
     <button data-tab="floors">الطوابق والكاش</button>
     <button data-tab="customers">سلوك الزبائن</button>
     <button data-tab="basket">سلة المشتريات</button>
@@ -557,6 +565,26 @@ tbody tr.drill td:first-child::after{content:" ‹";color:var(--muted)}
       </div>
     </section>
 
+    <!-- أهداف الأقسام الشهرية -->
+    <section class="panel" data-panel="targets" hidden>
+      <div class="card"><div class="card-h"><h3>أهداف الأقسام الشهرية</h3>
+        <label class="hint" style="display:flex;gap:6px;align-items:center">الشهر <select id="tgMonth"></select></label></div>
+        <p class="hint">لكل قسم ثلاثة مستويات، كلها من أداء القسم نفسه في آخر شهرين (المبيعات قبل الضريبة بعد خصم المردودات، ولا تتأثر بفلتر التاريخ أعلاه):
+          <b>المستوى 1</b> = معدل بيعه اليومي في الشهر السابق × أيام الشهر (المحافظة على المستوى).
+          <b>المستوى 3</b> = العودة لمعدل الشهر الذي قبله، على ألا تقل الزيادة عن 6% ولا تزيد عن 15%.
+          <b>المستوى 2 (الهدف)</b> = منتصف المسافة بينهما. الأقسام التي حصتها أقل من 3% تُجمع تحت «باقي الأقسام».
+          <b>المتوقع لآخر الشهر</b> = معدل الأيام المكتملة × أيام الشهر (اليوم الجاري لا يدخل حتى يكتمل).</p></div>
+      <div class="kpis" id="tgKpis"></div>
+      <div class="card"><h3>تقدّم الأقسام</h3>
+        <p class="hint" style="margin-bottom:8px">الشريط يبيّن المتوقع لآخر الشهر، والخطوط عليه هي المستويات 1 و2 و3. <b>الهامش</b> يقارن هامش الربح هذا الشهر بالشهر السابق: إذا نزل أكثر من نقطة تظهر ⚠، لأن رفع البيع بالخصومات على حساب الربح لا يُحتسب.</p>
+        <div class="tbl-wrap"><table id="tblTg"></table></div></div>
+      <div class="card"><div class="card-h"><h3>المبيعات التراكمية مقابل المستويات</h3><select id="tgDept"></select></div>
+        <div class="chart" id="chTg" style="height:320px"></div></div>
+      <div class="card"><h3>البيع اليومي لكل قسم</h3>
+        <p class="hint" style="margin-bottom:8px">الأخضر = اليوم تجاوز الهدف اليومي للمستوى 2 (الهدف ÷ أيام الشهر)، والأحمر = أقل منه بأكثر من 10%.</p>
+        <div class="tbl-wrap"><table id="tblTgDay"></table></div></div>
+    </section>
+
     <!-- الأصناف الممسوحة عن الكاش -->
     <section class="panel" data-panel="voids" hidden>
       <p class="hint" style="margin:0 0 12px">أصناف أُدخلت على الكاش ثم مُسحت قبل الدفع (من قاعدة Solid Soft). القيمة بسعر البيع. أغلب المسح طبيعي (تصحيح، زبون غيّر رأيه)، والمهم هو <b>النمط</b>: كاشير نسبته أعلى بوضوح من زملائه، مسح بدون موافقة مشرف، أو أصناف تُمسح ولا تعود للفاتورة.</p>
@@ -707,7 +735,7 @@ const S = {
   from: null, to: null, cmp: 'prev', branch: '', fam: [[], [], [], [], []], hasFam: false, catLevel: 1, tab: 'overview', dirty: new Set(),
   cur: store.get('zad.cur', 'د.أ'), net: true, cutoff: +store.get('zad.cutoff', '4'), gran: 'month', itMetric: 'sales', mov: 'up', pairOrder: 'lift', preset: '30',
 };
-const TABS = ['overview', 'time', 'items', 'alerts', 'cats', 'floors', 'customers', 'basket', 'ops', 'supp', 'order', 'offers', 'voids'];
+const TABS = ['overview', 'time', 'items', 'alerts', 'cats', 'targets', 'floors', 'customers', 'basket', 'ops', 'supp', 'order', 'offers', 'voids'];
 
 /* ============ واجهة الانتظار والأخطاء ============ */
 let busyN = 0;
@@ -964,7 +992,7 @@ $('#tabs').addEventListener('click', async e => {
 });
 async function renderTab(t) {
   $$('.panel[data-panel]').forEach(p => p.hidden = p.dataset.panel !== t);
-  const fn = { overview: renderOverview, time: renderTime, items: renderItems, alerts: renderAlerts, cats: renderCats, floors: renderFloors, customers: renderCustomers, basket: renderBasket, ops: renderOps, supp: renderSupp, order: renderOrder, offers: renderOffers, voids: renderVoids }[t];
+  const fn = { overview: renderOverview, time: renderTime, items: renderItems, alerts: renderAlerts, cats: renderCats, targets: renderTargets, floors: renderFloors, customers: renderCustomers, basket: renderBasket, ops: renderOps, supp: renderSupp, order: renderOrder, offers: renderOffers, voids: renderVoids }[t];
   await fn();
   S.dirty.delete(t);
 }
@@ -1390,6 +1418,130 @@ function renderCatNav(L) {
     ? `يعرض: ${levelName(L)}. اضغط على أي سطر في الجدول أو أي عمود في الرسم للنزول إلى ما تحته، واستخدم المسار في الأعلى للرجوع.`
     : 'الأقسام مقدّرة من أسماء الأصناف. استورد دليل الأصناف (مع العائلات) لتحليلها بشكل هرمي.';
 }
+/* ============ أهداف الأقسام الشهرية ============ */
+// المستوى 1 = معدل الشهر السابق، المستوى 3 = العودة لمعدل الشهر الذي قبله (زيادة بين 6% و15%)، المستوى 2 = المنتصف
+const TG_MIN = 1.06, TG_MAX = 1.15, TG_SMALL = 0.03, TG_OTHER = 'باقي الأقسام';
+const TG_LV = ['دون المستوى 1', 'المستوى 1', 'المستوى 2', 'المستوى 3'];
+const monthLbl = m => `${AR_MONTHS[+m.slice(5, 7) - 1]} ${m.slice(0, 4)}`;
+const nextMonth = m => addDays(monthEnd(m), 1);
+let TG = null;
+async function renderTargets() {
+  // الأشهر الممكنة: من الشهر الذي بعد أول شهر في البيانات حتى الشهر الذي بعد آخر يوم فيها
+  const months = [];
+  for (let m = nextMonth(S.minDate), last = nextMonth(S.maxDate); m <= last; m = nextMonth(m)) months.unshift(m);
+  if (!months.includes(S.tgMonth)) S.tgMonth = months.includes(monthStart(S.maxDate)) ? monthStart(S.maxDate) : months[0];
+  $('#tgMonth').innerHTML = months.map(m => `<option value="${m}"${m === S.tgMonth ? ' selected' : ''}>${monthLbl(m)}</option>`).join('');
+  const M = S.tgMonth, end = monthEnd(M), nDays = diffDays(M, end) + 1;
+  const p1 = monthStart(addDays(M, -1)), p2 = monthStart(addDays(p1, -1));
+  // الأيام المكتملة فقط: اليوم الجاري لا يدخل في المعدل حتى ينتهي
+  const today = localToday(), doneEnd = minS(end, S.maxDate >= today ? addDays(today, -1) : S.maxDate);
+  const elapsed = doneEnd >= M ? diffDays(M, doneEnd) + 1 : 0;
+  const A = NETAMT(), mk = `strftime(date_trunc('month', d), '%Y-%m-%d')`;
+  const agg = await q(`SELECT f1, ${mk} m, SUM(${A})::DOUBLE s, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} - line_cost END)::DOUBLE pr, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} END)::DOUBLE sc
+    FROM sv WHERE d BETWEEN DATE '${p2}' AND DATE '${end}' GROUP BY 1, 2`);
+  const mdays = Object.fromEntries((await q(`SELECT ${mk} m, COUNT(DISTINCT d)::INTEGER n FROM sv WHERE d BETWEEN DATE '${p2}' AND DATE '${monthEnd(p1)}' GROUP BY 1`)).map(r => [r.m, r.n]));
+  const daily = await q(`SELECT f1, strftime(d, '%Y-%m-%d') d, SUM(${A})::DOUBLE s FROM sv WHERE d BETWEEN DATE '${M}' AND DATE '${end}' GROUP BY 1, 2`);
+  const n1 = mdays[p1], n2 = mdays[p2];
+  if (!n1) {
+    TG = null;
+    $('#tgKpis').innerHTML = `<div class="kpi"><div class="l">لا يمكن حساب الأهداف</div><div class="p">لا توجد بيانات لشهر ${monthLbl(p1)}، والأهداف تُبنى على أداء الشهر السابق.</div></div>`;
+    $('#tblTg').innerHTML = $('#tblTgDay').innerHTML = ''; $('#tgDept').innerHTML = ''; echarts.getInstanceByDom($('#chTg'))?.clear();
+    return;
+  }
+  // الأقسام الصغيرة (أقل من 3% من مبيعات الشهر السابق) والأصناف خارج الدليل تُجمع معاً
+  const p1s = new Map(); let p1t = 0;
+  for (const r of agg) if (r.m === p1) { p1s.set(r.f1, (p1s.get(r.f1) || 0) + r.s); p1t += r.s; }
+  const grp = f => f == null || f === NOT_IN_MASTER || (p1s.get(f) || 0) < p1t * TG_SMALL ? TG_OTHER : f;
+  const G = new Map(), blank = name => ({ name, s1: 0, s2: 0, mtd: 0, done: 0, pr: 0, sc: 0, pr1: 0, sc1: 0, days: {} });
+  const g = k => G.get(k) || G.set(k, blank(k)).get(k);
+  for (const r of agg) {
+    const o = g(grp(r.f1));
+    if (r.m === p1) { o.s1 += r.s; o.pr1 += r.pr || 0; o.sc1 += r.sc || 0; }
+    else if (r.m === p2) o.s2 += r.s;
+    else if (r.m === M) { o.mtd += r.s; o.pr += r.pr || 0; o.sc += r.sc || 0; }
+  }
+  for (const r of daily) { const o = g(grp(r.f1)); o.days[r.d] = (o.days[r.d] || 0) + r.s; if (r.d <= doneEnd) o.done += r.s; }
+  const fin = o => {
+    o.proj = elapsed ? o.done / elapsed * nDays : null;
+    o.lv = o.proj == null ? null : o.proj >= o.t3 ? 3 : o.proj >= o.t2 ? 2 : o.proj >= o.t1 ? 1 : 0;
+    o.need = elapsed < nDays ? Math.max(0, o.t2 - o.done) / (nDays - elapsed) : null;
+    o.m = div(o.pr, o.sc); o.m1 = div(o.pr1, o.sc1);
+  };
+  const rows = [...G.values()].filter(o => o.s1 > 0);
+  for (const o of rows) {
+    const r1 = o.s1 / n1, r2 = n2 ? o.s2 / n2 : 0, k = Math.min(TG_MAX, Math.max(TG_MIN, r2 / r1));
+    o.t1 = r1 * nDays; o.t3 = r1 * k * nDays; o.t2 = (o.t1 + o.t3) / 2;
+    fin(o);
+  }
+  rows.sort((a, b) => (a.name === TG_OTHER) - (b.name === TG_OTHER) || b.t2 - a.t2);
+  const tot = blank('كل الأقسام');
+  for (const o of rows) {
+    for (const f of ['t1', 't2', 't3', 'mtd', 'done', 'pr', 'sc', 'pr1', 'sc1']) tot[f] = (tot[f] || 0) + o[f];
+    for (const [d, v] of Object.entries(o.days)) tot.days[d] = (tot.days[d] || 0) + v;
+  }
+  fin(tot);
+  TG = { rows, tot, M, end, nDays, doneEnd };
+
+  const lvHTML = o => o.lv == null ? '—' : `<span class="tg-lv l${o.lv}">${TG_LV[o.lv]}</span>`;
+  const started = elapsed > 0;
+  $('#tgKpis').innerHTML = [
+    { l: `الهدف (المستوى 2) — ${monthLbl(M)}`, v: F.money(tot.t2), p: `المستوى 1: ${F.money(tot.t1)} · المستوى 3: ${F.money(tot.t3)}` },
+    { l: 'المحقق حتى الآن', v: F.money(tot.mtd), p: `${elapsed} من ${nDays} يوماً مكتملاً · ${F.pct(div(tot.mtd, tot.t2))} من الهدف` },
+    { l: 'المتوقع لآخر الشهر', v: started ? F.money(tot.proj) : '—', p: started ? lvHTML(tot) : 'الشهر لم يبدأ بعد' },
+    { l: 'المطلوب يومياً لبلوغ الهدف', v: tot.need == null ? '—' : F.money(tot.need), p: tot.need == null ? 'انتهى الشهر' : started ? `المعدل الحالي: ${F.money(tot.done / elapsed)} يومياً` : `${nDays} يوماً متبقية` },
+  ].map(k => `<div class="kpi"><div class="l">${k.l}</div><div class="v">${k.v}</div><div class="p">${k.p}</div></div>`).join('');
+
+  const bar = o => {
+    if (o.proj == null) return '';
+    // المقياس يبدأ من 80% من المستوى 1 حتى تظهر المسافة بين المستويات بوضوح
+    const lo = o.t1 * 0.8, hi = o.t3 * 1.05, at = v => Math.min(100, Math.max(2, (v - lo) / (hi - lo) * 100)).toFixed(1) + '%';
+    return `<div class="tg-bar" title="المتوقع ${F.money(o.proj)}"><i class="l${o.lv}" style="width:${at(o.proj)}"></i>${[o.t1, o.t2, o.t3].map(t => `<b style="inset-inline-start:${at(t)}"></b>`).join('')}</div>`;
+  };
+  const margin = o => o.m == null ? '—' : F.pct(o.m) + (o.m1 != null && o.m < o.m1 - 0.01 ? ` <span class="d bad" title="الشهر السابق ${F.pct(o.m1)}">⚠ ${nf((o.m1 - o.m) * 100, 1)} نقطة</span>` : '');
+  const tr = (o, b) => `<tr${b ? ' style="font-weight:600"' : ''}><td>${esc(o.name)}</td><td class="num">${F.money(o.t1)}</td><td class="num"><b>${F.money(o.t2)}</b></td><td class="num">${F.money(o.t3)}</td>
+    <td class="num">${F.money(o.mtd)}</td><td class="num">${o.proj == null ? '—' : F.money(o.proj)}</td><td>${bar(o)}</td><td>${lvHTML(o)}</td>
+    <td class="num">${o.need == null ? '—' : F.money(o.need)}</td><td>${margin(o)}</td></tr>`;
+  $('#tblTg').innerHTML = `<thead><tr><th>القسم</th><th class="num">المستوى 1</th><th class="num">المستوى 2 (الهدف)</th><th class="num">المستوى 3</th><th class="num">المحقق</th>
+    <th class="num">المتوقع لآخر الشهر</th><th>التقدّم</th><th>المستوى المتوقع</th><th class="num">المطلوب يومياً للهدف</th><th>الهامش</th></tr></thead>
+    <tbody>${rows.map(o => tr(o)).join('')}${tr(tot, true)}</tbody>`;
+
+  // جدول البيع اليومي: الأحدث أولاً، والخلية تُلوَّن مقارنة بهدف المستوى 2 اليومي
+  const cols = [...rows, tot], days = [];
+  for (let d = minS(end, S.maxDate); d >= M; d = addDays(d, -1)) days.push(d);
+  const cell = (o, d) => {
+    const v = o.days[d] || 0, t = o.t2 / nDays, part = d > doneEnd;
+    return `<td class="num${part ? '' : v >= t ? ' tg-hit' : v < t * 0.9 ? ' tg-miss' : ''}">${F.money(v)}</td>`;
+  };
+  $('#tblTgDay').innerHTML = `<thead><tr><th>اليوم</th>${cols.map(o => `<th class="num">${esc(o.name)}<br><span class="hint">هدف ${F.money(o.t2 / nDays)}</span></th>`).join('')}</tr></thead>
+    <tbody>${days.length ? days.map(d => `<tr><td>${AR_DAYS[D(d).getUTCDay()]} ${d.slice(8)}/${d.slice(5, 7)}${d > doneEnd ? ' <span class="hint">(جارٍ)</span>' : ''}</td>${cols.map(o => cell(o, d)).join('')}</tr>`).join('')
+      : `<tr><td colspan="${cols.length + 1}" class="hint">لا توجد مبيعات في هذا الشهر بعد.</td></tr>`}</tbody>`;
+
+  if (![TG_OTHER, ...rows.map(o => o.name)].includes(S.tgDept)) S.tgDept = '';
+  $('#tgDept').innerHTML = `<option value="">كل الأقسام</option>` + rows.map(o => `<option${o.name === S.tgDept ? ' selected' : ''}>${esc(o.name)}</option>`).join('');
+  drawTgChart();
+}
+function drawTgChart() {
+  if (!TG) return;
+  const { M, nDays } = TG, o = TG.rows.find(r => r.name === S.tgDept) || TG.tot;
+  const xs = Array.from({ length: nDays }, (_, i) => addDays(M, i));
+  let c = 0;
+  const act = xs.map(x => x > S.maxDate ? null : (c += o.days[x] || 0));
+  const line = (name, t, color) => ({ name, type: 'line', data: xs.map((_, i) => t * (i + 1) / nDays), showSymbol: false, lineStyle: { width: 1.5, type: 'dashed', color }, itemStyle: { color } });
+  mount('chTg', {
+    tooltip: { ...baseOpt().tooltip, trigger: 'axis', valueFormatter: v => F.money(v) },
+    legend: { top: 0, textStyle: { color: css('--text-2'), fontFamily: FONT } },
+    grid: { left: 10, right: 10, top: 34, bottom: 6, containLabel: true },
+    xAxis: axis({ type: 'category', data: xs.map(x => +x.slice(8)), boundaryGap: false }),
+    yAxis: axis({ type: 'value', axisLabel: { color: css('--muted'), fontFamily: FONT, fontSize: 12, formatter: abbr } }),
+    series: [
+      { name: 'المحقق', type: 'line', data: act, showSymbol: false, lineStyle: { width: 3, color: css('--s1') }, itemStyle: { color: css('--s1') }, areaStyle: { color: css('--bar') } },
+      line('المستوى 1', o.t1, css('--s4')), line('المستوى 2 (الهدف)', o.t2, css('--good')), line('المستوى 3', o.t3, css('--s7')),
+    ],
+  });
+}
+$('#tgMonth').addEventListener('change', async e => { S.tgMonth = e.target.value; busy('جارٍ حساب الأهداف…'); try { await renderTargets(); } finally { busy(); } });
+$('#tgDept').addEventListener('change', e => { S.tgDept = e.target.value; drawTgChart(); });
+
 async function renderCats() {
   const L = catGroupLevel(), G = famLevelExpr(L), LN = levelName(L);
   renderCatNav(L);
