@@ -569,14 +569,14 @@ tbody tr.drill td:first-child::after{content:" ‹";color:var(--muted)}
     <section class="panel" data-panel="targets" hidden>
       <div class="card"><div class="card-h"><h3>أهداف الأقسام الشهرية</h3>
         <label class="hint" style="display:flex;gap:6px;align-items:center">الشهر <select id="tgMonth"></select></label></div>
-        <p class="hint">لكل قسم ثلاثة مستويات، كلها من أداء القسم نفسه في آخر شهرين (المبيعات قبل الضريبة بعد خصم المردودات، ولا تتأثر بفلتر التاريخ أعلاه):
+        <p class="hint">لكل قسم ثلاثة مستويات، كلها من أداء القسم نفسه في آخر شهرين (المبيعات <b>شاملة الضريبة</b> بعد خصم المردودات، ولا تتأثر بفلتر التاريخ ولا باختيار «المبالغ» أعلاه):
           <b>المستوى 1</b> = معدل بيعه اليومي في الشهر السابق × أيام الشهر (المحافظة على المستوى).
           <b>المستوى 3</b> = العودة لمعدل الشهر الذي قبله، على ألا تقل الزيادة عن 6% ولا تزيد عن 15%.
           <b>المستوى 2 (الهدف)</b> = منتصف المسافة بينهما. الأقسام التي حصتها أقل من 3% تُجمع تحت «باقي الأقسام».
           <b>المتوقع لآخر الشهر</b> = معدل الأيام المكتملة × أيام الشهر (اليوم الجاري لا يدخل حتى يكتمل).</p></div>
       <div class="kpis" id="tgKpis"></div>
       <div class="card"><h3>تقدّم الأقسام</h3>
-        <p class="hint" style="margin-bottom:8px">الشريط يبيّن المتوقع لآخر الشهر، والخطوط عليه هي المستويات 1 و2 و3. <b>الهامش</b> يقارن هامش الربح هذا الشهر بالشهر السابق: إذا نزل أكثر من نقطة تظهر ⚠، لأن رفع البيع بالخصومات على حساب الربح لا يُحتسب.</p>
+        <p class="hint" style="margin-bottom:8px">الشريط يبيّن المتوقع لآخر الشهر، والخطوط عليه هي المستويات 1 و2 و3. <b>الهامش</b> (قبل الضريبة) يقارن هامش الربح هذا الشهر بالشهر السابق: إذا نزل أكثر من نقطة تظهر ⚠، لأن رفع البيع بالخصومات على حساب الربح لا يُحتسب.</p>
         <div class="tbl-wrap"><table id="tblTg"></table></div></div>
       <div class="card"><div class="card-h"><h3>المبيعات التراكمية مقابل المستويات</h3><select id="tgDept"></select></div>
         <div class="chart" id="chTg" style="height:320px"></div></div>
@@ -1436,11 +1436,12 @@ async function renderTargets() {
   // الأيام المكتملة فقط: اليوم الجاري لا يدخل في المعدل حتى ينتهي
   const today = localToday(), doneEnd = minS(end, S.maxDate >= today ? addDays(today, -1) : S.maxDate);
   const elapsed = doneEnd >= M ? diffDays(M, doneEnd) + 1 : 0;
+  // المبيعات والأهداف شاملة الضريبة (أسهل للمقارنة مع تقارير النظام)، والهامش قبل الضريبة لأن الكلفة بدونها
   const A = NETAMT(), mk = `strftime(date_trunc('month', d), '%Y-%m-%d')`;
-  const agg = await q(`SELECT f1, ${mk} m, SUM(${A})::DOUBLE s, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} - line_cost END)::DOUBLE pr, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} END)::DOUBLE sc
+  const agg = await q(`SELECT f1, ${mk} m, SUM(amt_incl)::DOUBLE s, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} - line_cost END)::DOUBLE pr, SUM(CASE WHEN line_cost IS NOT NULL THEN ${A} END)::DOUBLE sc
     FROM sv WHERE d BETWEEN DATE '${p2}' AND DATE '${end}' GROUP BY 1, 2`);
   const mdays = Object.fromEntries((await q(`SELECT ${mk} m, COUNT(DISTINCT d)::INTEGER n FROM sv WHERE d BETWEEN DATE '${p2}' AND DATE '${monthEnd(p1)}' GROUP BY 1`)).map(r => [r.m, r.n]));
-  const daily = await q(`SELECT f1, strftime(d, '%Y-%m-%d') d, SUM(${A})::DOUBLE s FROM sv WHERE d BETWEEN DATE '${M}' AND DATE '${end}' GROUP BY 1, 2`);
+  const daily = await q(`SELECT f1, strftime(d, '%Y-%m-%d') d, SUM(amt_incl)::DOUBLE s FROM sv WHERE d BETWEEN DATE '${M}' AND DATE '${end}' GROUP BY 1, 2`);
   const n1 = mdays[p1], n2 = mdays[p2];
   if (!n1) {
     TG = null;
