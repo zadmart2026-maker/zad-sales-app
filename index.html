@@ -1508,7 +1508,8 @@ async function renderTargets() {
     o.m = div(o.pr, o.sc); o.m1 = div(o.pr1, o.sc1);
   };
   const rows = [...G.values()].filter(o => o.s1 > 0);
-  const man = tgManual()[M] || {};
+  if (!TGS.ready) await tgInit();
+  const man = await tgLoad(M);
   for (const o of rows) {
     const r1 = o.s1 / n1, r2 = n2 ? o.s2 / n2 : 0, k = Math.min(TG_MAX, Math.max(TG_MIN, r2 / r1));
     o.t1 = r1 * nDays; o.t3 = r1 * k * nDays; o.t2 = (o.t1 + o.t3) / 2;
@@ -1554,11 +1555,11 @@ async function renderTargets() {
     <tbody>${rows.map(o => tr(o)).join('')}${tr(tot, true)}</tbody>`;
   const nMan = rows.filter(o => o.manual).length;
   $('#tgEditBar').innerHTML = ed
-    ? `<span class="hint">اكتب الأهداف (شاملة الضريبة) ثم احفظ. الخانة الفارغة ترجع للتلقائي.</span>
+    ? `<span class="hint">غيّر <b>المستوى 2 (الهدف)</b> والمستويان 1 و3 بيتحركوا معه بنفس النسبة. الخانة الفارغة ترجع للتلقائي.</span>
        <button type="button" class="btn primary" id="tgSave">حفظ الأهداف</button>
        <button type="button" class="btn" id="tgAuto">رجوع للتلقائي</button>
        <button type="button" class="btn" id="tgCancel">إلغاء</button>`
-    : `${nMan ? `<span class="hint">${nMan} قسم بهدف يدوي لشهر ${monthLbl(M)}</span>` : ''}<button type="button" class="btn" id="tgEdit">✏️ تعديل الأهداف يدوياً</button>`;
+    : `${nMan ? `<span class="hint">${nMan} قسم بهدف يدوي لشهر ${monthLbl(M)}</span>` : ''}${TGS.admin ? '<button type="button" class="btn" id="tgEdit">✏️ تعديل الأهداف يدوياً</button>' : ''}${tgStatusHTML()}`;
 
   // جدول البيع اليومي: الأحدث أولاً، والخلية تُلوَّن مقارنة بهدف المستوى 2 اليومي
   const cols = [...rows, tot], days = [];
@@ -1596,18 +1597,82 @@ function drawTgChart() {
 }
 $('#tgMonth').addEventListener('change', async e => { S.tgMonth = e.target.value; busy('جارٍ حساب الأهداف…'); try { await renderTargets(); } finally { busy(); } });
 $('#tgDept').addEventListener('change', e => { S.tgDept = e.target.value; drawTgChart(); });
-// الأهداف اليدوية: { "YYYY-MM-01": { "اسم القسم": { t1, t2, t3 } } } محفوظة على هذا الجهاز
-function tgManual() { try { return JSON.parse(store.get('zad-tg-manual', '{}')) || {}; } catch { return {}; } }
+// ===== الأهداف اليدوية =====
+// مخزّنة بجدول manual_targets بمشروع Supabase المشترك (zad-sales) حتى تظهر بالرابط المشترك كمان.
+// تطبيق الجهاز: بعد "ربط" بحساب المدير مرة وحدة بيقرأ ويكتب هناك؛ قبل الربط بتنحفظ على هذا الجهاز ({ "YYYY-MM-01": { "القسم": { t1, t2, t3 } } }).
+const TG_SB_URL = 'https://tzonjieutboavbsmoqjt.supabase.co', TG_SB_KEY = 'sb_publishable_vZjzecEk4StdKbTH-wdHhw_Ko98F2oe';
+const TGS = { ready: false, mode: 'local', admin: true, who: '', err: '', login: false };
+let tgClient = null;
+const tgSb = () => tgClient || (tgClient = window.supabase.createClient(TG_SB_URL, TG_SB_KEY, { auth: { persistSession: true, storageKey: 'zad-sales-targets' } }));
+function tgLocal() { try { return JSON.parse(store.get('zad-tg-manual', '{}')) || {}; } catch { return {}; } }
+async function tgInit() {
+  TGS.ready = true; TGS.err = ''; TGS.mode = 'local'; TGS.admin = true; TGS.who = '';
+  try {
+    const u = (await tgSb().auth.getSession()).data.session?.user;
+    if (!u) return;
+    const { data: p, error } = await tgSb().from('user_profile').select('is_admin,full_name').eq('user_id', u.id).maybeSingle();
+    if (error) throw error;
+    TGS.mode = 'db'; TGS.admin = !!p?.is_admin; TGS.who = p?.full_name || u.email;
+  } catch { TGS.err = 'تعذّر الاتصال بالنسخة المشتركة — الأهداف المعروضة من هذا الجهاز'; }
+}
+async function tgLoad(M) {
+  if (TGS.mode === 'db') {
+    const { data, error } = await tgSb().from('manual_targets').select('dept,t1,t2,t3').eq('m', M);
+    if (!error) return Object.fromEntries(data.map(r => [r.dept, { t1: +r.t1, t2: +r.t2, t3: +r.t3 }]));
+    TGS.err = 'تعذّر قراءة الأهداف المشتركة';
+    return {};
+  }
+  return tgLocal()[M] || {};
+}
+async function tgSave(M, m) {
+  if (TGS.mode === 'db') {
+    let r = await tgSb().from('manual_targets').delete().eq('m', M); if (r.error) throw r.error;
+    const rows = Object.entries(m).map(([dept, v]) => ({ m: M, dept, ...v }));
+    if (rows.length) { r = await tgSb().from('manual_targets').insert(rows); if (r.error) throw r.error; }
+    return;
+  }
+  const all = tgLocal(); if (Object.keys(m).length) all[M] = m; else delete all[M];
+  store.set('zad-tg-manual', JSON.stringify(all));
+}
+function tgStatusHTML() {
+  const err = TGS.err ? `<span class="hint" style="color:var(--bad)">${esc(TGS.err)}</span>` : '';
+  if (TGS.mode === 'db') return `${err}<span class="hint" title="الأهداف اليدوية مشتركة مع الرابط المشترك">🔗 مشتركة · ${esc(TGS.who)}</span><button type="button" class="btn" id="tgOut">فك الربط</button>`;
+  if (!TGS.login) return `${err}<button type="button" class="btn" id="tgLink" title="سجّل دخول بحساب المدير بالرابط المشترك حتى تظهر نفس الأهداف هناك">🔗 مشاركة الأهداف مع الرابط المشترك</button>`;
+  return `${err}<form id="tgLoginForm" style="display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <input id="tgUser" type="email" placeholder="بريد حساب الرابط المشترك" autocomplete="username" required style="direction:ltr">
+    <input id="tgPass" type="password" placeholder="كلمة السر" autocomplete="current-password" required style="direction:ltr">
+    <button class="btn primary">ربط</button><button type="button" class="btn" id="tgLinkX">إلغاء</button></form>`;
+}
+$('#tgEditBar').addEventListener('submit', async e => {
+  e.preventDefault();
+  busy('جارٍ الربط…');
+  try {
+    const { error } = await tgSb().auth.signInWithPassword({ email: $('#tgUser').value.trim(), password: $('#tgPass').value });
+    if (error) { alert('تعذّر الدخول: ' + (error.message === 'Invalid login credentials' ? 'البريد أو كلمة السر غير صحيحة' : error.message)); return; }
+    await tgInit();
+    if (TGS.mode !== 'db') { alert(TGS.err || 'تعذّر الربط'); return; }
+    // الأهداف المحفوظة على الجهاز قبل الربط بتنتقل للنسخة المشتركة (إذا الحساب مدير)
+    const local = tgLocal();
+    if (TGS.admin && Object.keys(local).length) {
+      const rows = Object.entries(local).flatMap(([m, d]) => Object.entries(d).map(([dept, v]) => ({ m, dept, ...v })));
+      const { error: e2 } = await tgSb().from('manual_targets').upsert(rows);
+      if (e2) alert('تعذّر نقل الأهداف المحفوظة على الجهاز: ' + e2.message); else store.set('zad-tg-manual', '{}');
+    }
+    TGS.login = false;
+    await renderTargets();
+  } finally { busy(); }
+});
 async function tgRerender(edit) { S.tgEdit = edit; busy('جارٍ حساب الأهداف…'); try { await renderTargets(); } finally { busy(); } }
 $('#tgEditBar').addEventListener('click', async e => {
   const id = e.target.id;
+  if (id === 'tgLink' || id === 'tgLinkX') { TGS.login = id === 'tgLink'; return tgRerender(false); }
+  if (id === 'tgOut') { if (!confirm('فك ربط الأهداف بالنسخة المشتركة على هذا الجهاز؟ الأهداف المشتركة بتضل محفوظة هناك.')) return; await tgSb().auth.signOut(); TGS.ready = false; return tgRerender(false); }
   if (id === 'tgEdit') return tgRerender(true);
   if (id === 'tgCancel') return tgRerender(false);
   if (!TG || (id !== 'tgSave' && id !== 'tgAuto')) return;
-  const all = tgManual();
+  let m = {};
   if (id === 'tgAuto') {
     if (!confirm(`حذف كل الأهداف اليدوية لشهر ${monthLbl(TG.M)} والرجوع للأهداف التلقائية؟`)) return;
-    delete all[TG.M];
   } else {
     const vals = {};
     for (const inp of $$('#tblTg .tg-in')) {
@@ -1615,7 +1680,6 @@ $('#tgEditBar').addEventListener('click', async e => {
       if (v != null && !(v >= 0)) { alert('أدخل أرقاماً صحيحة'); inp.focus(); return; }
       (vals[inp.dataset.n] ||= {})[inp.dataset.k] = v;
     }
-    const m = {};
     for (const o of TG.rows) {
       const v = vals[o.name]; if (!v) continue;
       const auto = [o.a1, o.a2, o.a3].map(Math.round), cur = [o.t1, o.t2, o.t3].map(Math.round);
@@ -1625,9 +1689,9 @@ $('#tgEditBar').addEventListener('click', async e => {
       if (!(t[0] <= t[1] && t[1] <= t[2])) { alert(`${o.name}: لازم المستوى 1 ≤ الهدف ≤ المستوى 3`); return; }
       if (t.some((x, i) => x !== auto[i])) m[o.name] = { t1: t[0], t2: t[1], t3: t[2] };
     }
-    if (Object.keys(m).length) all[TG.M] = m; else delete all[TG.M];
   }
-  store.set('zad-tg-manual', JSON.stringify(all));
+  busy('جارٍ حفظ الأهداف…');
+  try { await tgSave(TG.M, m); } catch (err) { busy(); alert('تعذّر حفظ الأهداف: ' + (err.message || err)); return; }
   await tgRerender(false);
 });
 
